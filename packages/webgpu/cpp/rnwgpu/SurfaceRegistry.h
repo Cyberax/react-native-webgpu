@@ -45,6 +45,10 @@ public:
     config.width = width;
     config.height = height;
     config.presentMode = wgpu::PresentMode::Fifo;
+    // Ensure CopySrc so we can snapshot the surface to a backup texture
+    // in present(), and CopyDst so switchToOnscreen can blit back.
+    config.usage = config.usage | wgpu::TextureUsage::CopySrc |
+                   wgpu::TextureUsage::CopyDst;
     _configure();
   }
 
@@ -61,45 +65,10 @@ public:
     // Acquire GPU lock to serialize with JS thread Dawn calls
     std::unique_lock<std::mutex> gpuLock(_gpuLock ? _gpuLock->mutex : _localMutex);
     std::unique_lock<std::shared_mutex> lock(_mutex);
-    // We only do this if the onscreen surface is configured.
-    auto isConfigured = config.device != nullptr;
-    if (isConfigured) {
-      wgpu::TextureDescriptor textureDesc;
-      textureDesc.usage = wgpu::TextureUsage::RenderAttachment |
-                          wgpu::TextureUsage::CopySrc |
-                          wgpu::TextureUsage::CopyDst |
-                          wgpu::TextureUsage::TextureBinding;
-      textureDesc.format = config.format;
-      textureDesc.size.width = config.width;
-      textureDesc.size.height = config.height;
-      texture = config.device.CreateTexture(&textureDesc);
-
-      // Snapshot the current surface frame into the offscreen texture
-      if (surface) {
-        wgpu::SurfaceTexture surfTex;
-        surface.GetCurrentTexture(&surfTex);
-        if (surfTex.status == wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal ||
-            surfTex.status == wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal) {
-          auto device = config.device;
-          wgpu::CommandEncoderDescriptor encoderDesc;
-          wgpu::CommandEncoder encoder = device.CreateCommandEncoder(&encoderDesc);
-
-          wgpu::TexelCopyTextureInfo src = {};
-          src.texture = surfTex.texture;
-
-          wgpu::TexelCopyTextureInfo dst = {};
-          dst.texture = texture;
-
-          wgpu::Extent3D size = {config.width, config.height, 1};
-          encoder.CopyTextureToTexture(&src, &dst, &size);
-
-          wgpu::CommandBuffer commands = encoder.Finish();
-          wgpu::Queue queue = device.GetQueue();
-          queue.Submit(1, &commands);
-          surface.Present();
-        }
-      }
-    }
+    // The offscreen texture already holds the last rendered frame
+    // (JS always renders to it, present() copies it to the surface).
+    // Just drop the surface — getCurrentTexture() will keep returning
+    // the offscreen texture.
     surface = nullptr;
     return nativeSurface;
   }
@@ -110,36 +79,15 @@ public:
     std::unique_lock<std::shared_mutex> lock(_mutex);
     nativeSurface = newNativeSurface;
     surface = std::move(newSurface);
-    // If we are comming from an offscreen context, we need to configure the new
-    // surface
-    if (texture != nullptr) {
-      config.usage = config.usage | wgpu::TextureUsage::CopyDst;
-      _configure();
-      // We flush the offscreen texture to the onscreen one
-      // TODO: there is a faster way to do this without validation?
-      wgpu::CommandEncoderDescriptor encoderDesc;
-      auto device = config.device;
-      wgpu::CommandEncoder encoder = device.CreateCommandEncoder(&encoderDesc);
-
-      wgpu::TexelCopyTextureInfo sourceTexture = {};
-      sourceTexture.texture = texture;
-
-      wgpu::TexelCopyTextureInfo destinationTexture = {};
-      wgpu::SurfaceTexture surfaceTexture;
-      surface.GetCurrentTexture(&surfaceTexture);
-      destinationTexture.texture = surfaceTexture.texture;
-
-      wgpu::Extent3D size = {sourceTexture.texture.GetWidth(),
-                             sourceTexture.texture.GetHeight(),
-                             sourceTexture.texture.GetDepthOrArrayLayers()};
-
-      encoder.CopyTextureToTexture(&sourceTexture, &destinationTexture, &size);
-
-      wgpu::CommandBuffer commands = encoder.Finish();
-      wgpu::Queue queue = device.GetQueue();
-      queue.Submit(1, &commands);
-      surface.Present();
-      texture = nullptr;
+    // Configure the surface for receiving copies from the offscreen texture
+    if (config.device != nullptr) {
+      auto surfConfig = config;
+      surfConfig.usage = surfConfig.usage | wgpu::TextureUsage::CopyDst;
+      surface.Configure(&surfConfig);
+      // Immediately show the last rendered frame on the new surface
+      if (texture != nullptr) {
+        _copyToSurfaceAndPresent();
+      }
     }
   }
 
@@ -151,20 +99,16 @@ public:
 
   void present() {
     std::unique_lock<std::shared_mutex> lock(_mutex);
-    if (surface) {
-      surface.Present();
+    if (surface && texture) {
+      // Copy the offscreen texture to the surface and present
+      _copyToSurfaceAndPresent();
     }
   }
 
   wgpu::Texture getCurrentTexture() {
     std::shared_lock<std::shared_mutex> lock(_mutex);
-    if (surface) {
-      wgpu::SurfaceTexture surfaceTexture;
-      surface.GetCurrentTexture(&surfaceTexture);
-      return surfaceTexture.texture;
-    } else {
-      return texture;
-    }
+    // Always return the offscreen texture. present() copies it to the surface.
+    return texture;
   }
 
   NativeInfo getNativeInfo() {
@@ -189,18 +133,51 @@ public:
 
 private:
   void _configure() {
+    // Always create an offscreen texture — JS renders to it.
+    // present() copies to the surface if one is available.
+    _createOffscreenTexture();
     if (surface) {
-      surface.Configure(&config);
-    } else {
-      wgpu::TextureDescriptor textureDesc;
-      textureDesc.format = config.format;
-      textureDesc.size.width = config.width;
-      textureDesc.size.height = config.height;
-      textureDesc.usage = wgpu::TextureUsage::RenderAttachment |
-                          wgpu::TextureUsage::CopySrc |
-                          wgpu::TextureUsage::TextureBinding;
-      texture = config.device.CreateTexture(&textureDesc);
+      auto surfConfig = config;
+      surfConfig.usage = surfConfig.usage | wgpu::TextureUsage::CopyDst;
+      surface.Configure(&surfConfig);
     }
+  }
+
+  void _createOffscreenTexture() {
+    wgpu::TextureDescriptor textureDesc;
+    textureDesc.format = config.format;
+    textureDesc.size.width = config.width;
+    textureDesc.size.height = config.height;
+    textureDesc.usage = wgpu::TextureUsage::RenderAttachment |
+                        wgpu::TextureUsage::CopySrc |
+                        wgpu::TextureUsage::CopyDst |
+                        wgpu::TextureUsage::TextureBinding;
+    texture = config.device.CreateTexture(&textureDesc);
+  }
+
+  // Copy the offscreen texture to the surface and present it.
+  void _copyToSurfaceAndPresent() {
+    wgpu::SurfaceTexture surfTex;
+    surface.GetCurrentTexture(&surfTex);
+    if (surfTex.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal &&
+        surfTex.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal) {
+      return;
+    }
+
+    auto device = config.device;
+    wgpu::CommandEncoderDescriptor encDesc;
+    auto encoder = device.CreateCommandEncoder(&encDesc);
+
+    wgpu::TexelCopyTextureInfo src = {};
+    src.texture = texture;
+    wgpu::TexelCopyTextureInfo dst = {};
+    dst.texture = surfTex.texture;
+    wgpu::Extent3D size = {texture.GetWidth(), texture.GetHeight(), 1};
+
+    encoder.CopyTextureToTexture(&src, &dst, &size);
+    auto cmds = encoder.Finish();
+    device.GetQueue().Submit(1, &cmds);
+    surface.Present();
   }
 
   std::shared_ptr<GPULockInfo> _gpuLock;
