@@ -72,6 +72,7 @@ public:
   MakeWebGPUCanvasContext(int contextId, float width, float height) {
     auto ctx =
         std::make_shared<GPUCanvasContext>(_gpu, contextId, width, height);
+    ctx->setGPULock(_gpu->getGPULock());
     return ctx;
   }
 

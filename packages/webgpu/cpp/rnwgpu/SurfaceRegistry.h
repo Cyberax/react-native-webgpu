@@ -1,10 +1,12 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
 #include <utility>
 
+#include "GPULockInfo.h"
 #include "webgpu/webgpu_cpp.h"
 
 namespace rnwgpu {
@@ -26,6 +28,9 @@ public:
       : gpu(std::move(gpu)), width(width), height(height) {}
 
   ~SurfaceInfo() { surface = nullptr; }
+
+  void setGPULock(std::shared_ptr<GPULockInfo> lock) { _gpuLock = std::move(lock); }
+  std::shared_ptr<GPULockInfo> getGPULock() const { return _gpuLock; }
 
   void reconfigure(int newWidth, int newHeight) {
     std::unique_lock<std::shared_mutex> lock(_mutex);
@@ -53,6 +58,8 @@ public:
   }
 
   void *switchToOffscreen() {
+    // Acquire GPU lock to serialize with JS thread Dawn calls
+    std::unique_lock<std::mutex> gpuLock(_gpuLock ? _gpuLock->mutex : _localMutex);
     std::unique_lock<std::shared_mutex> lock(_mutex);
     // We only do this if the onscreen surface is configured.
     auto isConfigured = config.device != nullptr;
@@ -60,17 +67,46 @@ public:
       wgpu::TextureDescriptor textureDesc;
       textureDesc.usage = wgpu::TextureUsage::RenderAttachment |
                           wgpu::TextureUsage::CopySrc |
+                          wgpu::TextureUsage::CopyDst |
                           wgpu::TextureUsage::TextureBinding;
       textureDesc.format = config.format;
       textureDesc.size.width = config.width;
       textureDesc.size.height = config.height;
       texture = config.device.CreateTexture(&textureDesc);
+
+      // Snapshot the current surface frame into the offscreen texture
+      if (surface) {
+        wgpu::SurfaceTexture surfTex;
+        surface.GetCurrentTexture(&surfTex);
+        if (surfTex.status == wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal ||
+            surfTex.status == wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal) {
+          auto device = config.device;
+          wgpu::CommandEncoderDescriptor encoderDesc;
+          wgpu::CommandEncoder encoder = device.CreateCommandEncoder(&encoderDesc);
+
+          wgpu::TexelCopyTextureInfo src = {};
+          src.texture = surfTex.texture;
+
+          wgpu::TexelCopyTextureInfo dst = {};
+          dst.texture = texture;
+
+          wgpu::Extent3D size = {config.width, config.height, 1};
+          encoder.CopyTextureToTexture(&src, &dst, &size);
+
+          wgpu::CommandBuffer commands = encoder.Finish();
+          wgpu::Queue queue = device.GetQueue();
+          queue.Submit(1, &commands);
+          surface.Present();
+        }
+      }
     }
     surface = nullptr;
     return nativeSurface;
   }
 
   void switchToOnscreen(void *newNativeSurface, wgpu::Surface newSurface) {
+    // Acquire GPU lock to serialize with JS thread Dawn calls
+    std::unique_lock<std::mutex> gpuLock(_gpuLock ? _gpuLock->mutex : _localMutex);
     std::unique_lock<std::shared_mutex> lock(_mutex);
     nativeSurface = newNativeSurface;
     surface = std::move(newSurface);
@@ -167,6 +203,8 @@ private:
     }
   }
 
+  std::shared_ptr<GPULockInfo> _gpuLock;
+  std::mutex _localMutex; // fallback when _gpuLock is not set
   mutable std::shared_mutex _mutex;
   void *nativeSurface = nullptr;
   wgpu::Surface surface = nullptr;

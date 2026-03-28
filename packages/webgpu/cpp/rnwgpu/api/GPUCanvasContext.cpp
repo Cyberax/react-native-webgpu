@@ -34,6 +34,9 @@ void GPUCanvasContext::configure(
   surfaceConfiguration.alphaMode = configuration->alphaMode;
 #endif
   surfaceConfiguration.presentMode = wgpu::PresentMode::Fifo;
+  // Propagate the GPU lock to SurfaceInfo so UI thread surface operations
+  // are serialized with JS thread Dawn calls
+  _surfaceInfo->setGPULock(getGPULock());
   _surfaceInfo->configure(surfaceConfiguration);
 }
 
@@ -48,7 +51,9 @@ std::shared_ptr<GPUTexture> GPUCanvasContext::getCurrentTexture() {
     _surfaceInfo->reconfigure(width, height);
   }
   auto texture = _surfaceInfo->getCurrentTexture();
-  return std::make_shared<GPUTexture>(texture, "");
+  auto result = std::make_shared<GPUTexture>(texture, "");
+  result->setGPULock(getGPULock());
+  return result;
 }
 
 void GPUCanvasContext::present() {

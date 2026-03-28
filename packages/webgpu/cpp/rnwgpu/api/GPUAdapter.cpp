@@ -89,14 +89,16 @@ async::AsyncTaskHandle GPUAdapter::requestDevice(
   auto creationRuntime = getCreationRuntime();
   return _async->postTask(
       [this, aDescriptor, descriptor, label = std::move(label),
-       deviceLostBinding,
-       creationRuntime](const async::AsyncTaskHandle::ResolveFunction &resolve,
-                        const async::AsyncTaskHandle::RejectFunction &reject) {
+       deviceLostBinding, creationRuntime,
+       gpuLock = getGPULock()](
+          const async::AsyncTaskHandle::ResolveFunction &resolve,
+          const async::AsyncTaskHandle::RejectFunction &reject) {
         (void)descriptor;
         _instance.RequestDevice(
             &aDescriptor, wgpu::CallbackMode::AllowProcessEvents,
             [asyncRunner = _async, resolve, reject, label, creationRuntime,
-             deviceLostBinding](wgpu::RequestDeviceStatus status,
+             deviceLostBinding,
+             gpuLock](wgpu::RequestDeviceStatus status,
                                 wgpu::Device device,
                                 wgpu::StringView message) mutable {
               if (message.length) {
@@ -144,6 +146,7 @@ async::AsyncTaskHandle GPUAdapter::requestDevice(
 
               auto deviceHost = std::make_shared<GPUDevice>(std::move(device),
                                                             asyncRunner, label);
+              deviceHost->setGPULock(gpuLock);
               *deviceLostBinding = deviceHost;
 
               // Register the device in the static registry so the uncaptured
