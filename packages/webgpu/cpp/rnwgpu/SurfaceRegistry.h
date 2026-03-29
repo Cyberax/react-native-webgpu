@@ -9,6 +9,10 @@
 #include "GPULockInfo.h"
 #include "webgpu/webgpu_cpp.h"
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+
 namespace rnwgpu {
 
 struct NativeInfo {
@@ -204,6 +208,10 @@ public:
 
   std::shared_ptr<SurfaceInfo> getSurfaceInfo(int id) {
     std::shared_lock<std::shared_mutex> lock(_mutex);
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "SurfaceRegistry",
+                        "getSurfaceInfo(%d) size=%zu", id, _registry.size());
+#endif
     auto it = _registry.find(id);
     if (it != _registry.end()) {
       return it->second;
@@ -212,20 +220,8 @@ public:
   }
 
   void removeSurfaceInfo(int id) {
-    std::shared_ptr<SurfaceInfo> info;
-    {
-      std::unique_lock<std::shared_mutex> lock(_mutex);
-      auto it = _registry.find(id);
-      if (it != _registry.end()) {
-        info = it->second;
-        _registry.erase(it);
-      }
-    }
-    // Switch to offscreen outside the registry lock (it acquires GPU lock internally).
-    // The SurfaceInfo stays alive via the shared_ptr held by GPUCanvasContext.
-    if (info) {
-      info->switchToOffscreen();
-    }
+    std::unique_lock<std::shared_mutex> lock(_mutex);
+    _registry.erase(id);
   }
 
   std::shared_ptr<SurfaceInfo> addSurfaceInfo(int id, wgpu::Instance gpu,
