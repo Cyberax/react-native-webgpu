@@ -44,8 +44,8 @@ extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onSurfaceChanged(
 extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onSurfaceCreate(
     JNIEnv *env, jobject thiz, jobject jSurface, jint contextId, jfloat width,
     jfloat height) {
+  // Calls ANativeWindow_acquire(window);
   auto window = ANativeWindow_fromSurface(env, jSurface);
-  // ANativeWindow_acquire(window);
   auto &registry = rnwgpu::SurfaceRegistry::getInstance();
   auto gpu = manager->_gpu;
   auto surface = manager->_platformContext->makeSurface(
@@ -61,11 +61,26 @@ Java_com_webgpu_WebGPUView_switchToOffscreenSurface(JNIEnv *env, jobject thiz,
                                                     jint contextId) {
   auto &registry = rnwgpu::SurfaceRegistry::getInstance();
   auto nativeSurface = registry.getSurfaceInfo(contextId)->switchToOffscreen();
-  // ANativeWindow_release(reinterpret_cast<ANativeWindow *>(nativeSurface));
+  ANativeWindow_release(reinterpret_cast<ANativeWindow *>(nativeSurface));
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onSurfaceDestroy(
     JNIEnv *env, jobject thiz, jint contextId) {
+  // Just switch to offscreen. FlatList destroys views on every scroll-out,
+  // so we can't remove from registry here. The SurfaceInfo is owned by the
+  // JS-side GPUCanvasContext (shared_ptr) and cleaned up on JS GC.
+  auto &registry = rnwgpu::SurfaceRegistry::getInstance();
+  auto info = registry.getSurfaceInfo(contextId);
+  if (info) {
+    info->switchToOffscreen();
+  }
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onViewDetached(
+    JNIEnv *env, jobject thiz, jint contextId) {
+  // Called from onDropViewInstance — the React component is permanently unmounted.
+  // Safe to remove: if the same contextId comes back, getSurfaceInfoOrCreate
+  // will create a fresh SurfaceInfo.
   auto &registry = rnwgpu::SurfaceRegistry::getInstance();
   registry.removeSurfaceInfo(contextId);
 }

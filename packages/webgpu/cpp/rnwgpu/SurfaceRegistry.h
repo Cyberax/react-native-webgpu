@@ -212,8 +212,20 @@ public:
   }
 
   void removeSurfaceInfo(int id) {
-    std::unique_lock<std::shared_mutex> lock(_mutex);
-    _registry.erase(id);
+    std::shared_ptr<SurfaceInfo> info;
+    {
+      std::unique_lock<std::shared_mutex> lock(_mutex);
+      auto it = _registry.find(id);
+      if (it != _registry.end()) {
+        info = it->second;
+        _registry.erase(it);
+      }
+    }
+    // Switch to offscreen outside the registry lock (it acquires GPU lock internally).
+    // The SurfaceInfo stays alive via the shared_ptr held by GPUCanvasContext.
+    if (info) {
+      info->switchToOffscreen();
+    }
   }
 
   std::shared_ptr<SurfaceInfo> addSurfaceInfo(int id, wgpu::Instance gpu,
