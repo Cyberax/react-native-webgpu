@@ -13,6 +13,8 @@
 #include <android/log.h>
 #endif
 
+#include "MainThreadDispatch.h"
+
 namespace rnwgpu {
 
 struct NativeInfo {
@@ -85,9 +87,11 @@ public:
     surface = std::move(newSurface);
     // Configure the surface for receiving copies from the offscreen texture
     if (config.device != nullptr) {
-      auto surfConfig = config;
-      surfConfig.usage = surfConfig.usage | wgpu::TextureUsage::CopyDst;
-      surface.Configure(&surfConfig);
+      _runOnMainThread([this]() {
+        auto surfConfig = config;
+        surfConfig.usage = surfConfig.usage | wgpu::TextureUsage::CopyDst;
+        surface.Configure(&surfConfig);
+      });
       // Immediately show the last rendered frame on the new surface
       if (texture != nullptr) {
         _copyToSurfaceAndPresent();
@@ -96,7 +100,7 @@ public:
   }
 
   void resize(int newWidth, int newHeight) {
-    std::unique_lock<std::shared_mutex> lock(_mutex);
+    std::lock_guard<std::mutex> lock(_sizeMutex);
     width = newWidth;
     height = newHeight;
   }
@@ -116,12 +120,12 @@ public:
   }
 
   NativeInfo getNativeInfo() {
-    std::shared_lock<std::shared_mutex> lock(_mutex);
+    std::lock_guard<std::mutex> lock(_sizeMutex);
     return {.nativeSurface = nativeSurface, .width = width, .height = height};
   }
 
   Size getSize() {
-    std::shared_lock<std::shared_mutex> lock(_mutex);
+    std::lock_guard<std::mutex> lock(_sizeMutex);
     return {.width = width, .height = height};
   }
 
@@ -136,14 +140,23 @@ public:
   }
 
 private:
+  // On iOS, surface operations must happen on the main thread (CAMetalLayer).
+  // On Android, this is a no-op passthrough.
+  template <typename F>
+  void _runOnMainThread(F &&fn) {
+    runOnMainThreadSync(std::function<void()>(std::forward<F>(fn)));
+  }
+
   void _configure() {
     // Always create an offscreen texture — JS renders to it.
     // present() copies to the surface if one is available.
     _createOffscreenTexture();
     if (surface) {
-      auto surfConfig = config;
-      surfConfig.usage = surfConfig.usage | wgpu::TextureUsage::CopyDst;
-      surface.Configure(&surfConfig);
+      _runOnMainThread([this]() {
+        auto surfConfig = config;
+        surfConfig.usage = surfConfig.usage | wgpu::TextureUsage::CopyDst;
+        surface.Configure(&surfConfig);
+      });
     }
   }
 
@@ -161,31 +174,34 @@ private:
 
   // Copy the offscreen texture to the surface and present it.
   void _copyToSurfaceAndPresent() {
-    wgpu::SurfaceTexture surfTex;
-    surface.GetCurrentTexture(&surfTex);
-    if (surfTex.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal &&
-        surfTex.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal) {
-      return;
-    }
+    _runOnMainThread([this]() {
+      wgpu::SurfaceTexture surfTex;
+      surface.GetCurrentTexture(&surfTex);
+      if (surfTex.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal &&
+          surfTex.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal) {
+        return;
+      }
 
-    auto device = config.device;
-    wgpu::CommandEncoderDescriptor encDesc;
-    auto encoder = device.CreateCommandEncoder(&encDesc);
+      auto device = config.device;
+      wgpu::CommandEncoderDescriptor encDesc;
+      auto encoder = device.CreateCommandEncoder(&encDesc);
 
-    wgpu::TexelCopyTextureInfo src = {};
-    src.texture = texture;
-    wgpu::TexelCopyTextureInfo dst = {};
-    dst.texture = surfTex.texture;
-    wgpu::Extent3D size = {texture.GetWidth(), texture.GetHeight(), 1};
+      wgpu::TexelCopyTextureInfo src = {};
+      src.texture = texture;
+      wgpu::TexelCopyTextureInfo dst = {};
+      dst.texture = surfTex.texture;
+      wgpu::Extent3D size = {texture.GetWidth(), texture.GetHeight(), 1};
 
-    encoder.CopyTextureToTexture(&src, &dst, &size);
-    auto cmds = encoder.Finish();
-    device.GetQueue().Submit(1, &cmds);
-    surface.Present();
+      encoder.CopyTextureToTexture(&src, &dst, &size);
+      auto cmds = encoder.Finish();
+      device.GetQueue().Submit(1, &cmds);
+      surface.Present();
+    });
   }
 
   std::shared_ptr<GPULockInfo> _gpuLock;
   std::mutex _localMutex; // fallback when _gpuLock is not set
+  std::mutex _sizeMutex;  // protects width/height (UI thread writes, JS thread reads)
   mutable std::shared_mutex _mutex;
   void *nativeSurface = nullptr;
   wgpu::Surface surface = nullptr;

@@ -16,7 +16,7 @@ Pod::Spec.new do |s|
 
   s.source_files = [
     "apple/**/*.{h,c,cc,cpp,m,mm,swift}",  
-    "cpp/**/*.{h,cpp}"
+    "cpp/**/*.{h,cpp,mm}"
   ]
 
   s.vendored_frameworks = 'libs/apple/libwebgpu_dawn.xcframework'
