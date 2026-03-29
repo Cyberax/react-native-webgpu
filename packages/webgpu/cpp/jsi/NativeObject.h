@@ -435,11 +435,11 @@ protected:
    * releases automatically when it goes out of scope. If no lock is
    * set, returns a no-op lock (not owning any mutex).
    */
-  std::unique_lock<std::mutex> acquireGPULock() {
+  std::unique_lock<std::recursive_mutex> acquireGPULock() {
     if (_gpuLock) {
-      return std::unique_lock<std::mutex>(_gpuLock->mutex);
+      return std::unique_lock<std::recursive_mutex>(_gpuLock->mutex);
     }
-    return std::unique_lock<std::mutex>(); // no-op
+    return std::unique_lock<std::recursive_mutex>(); // no-op
   }
 
   // ============================================================

@@ -22,7 +22,10 @@ namespace rnwgpu {
  * it before touching Dawn APIs.
  */
 struct GPULockInfo {
-  std::mutex mutex;
+  // Recursive because JS→native calls can trigger descriptor conversions
+  // that round-trip back through JS, re-entering native methods on the
+  // same thread.
+  std::recursive_mutex mutex;
 };
 
 } // namespace rnwgpu

@@ -69,7 +69,7 @@ public:
 
   void *switchToOffscreen() {
     // Acquire GPU lock to serialize with JS thread Dawn calls
-    std::unique_lock<std::mutex> gpuLock(_gpuLock ? _gpuLock->mutex : _localMutex);
+    std::unique_lock<std::recursive_mutex> gpuLock(_gpuLock ? _gpuLock->mutex : _localMutex);
     std::unique_lock<std::shared_mutex> lock(_mutex);
     // The offscreen texture already holds the last rendered frame
     // (JS always renders to it, present() copies it to the surface).
@@ -81,7 +81,7 @@ public:
 
   void switchToOnscreen(void *newNativeSurface, wgpu::Surface newSurface) {
     // Acquire GPU lock to serialize with JS thread Dawn calls
-    std::unique_lock<std::mutex> gpuLock(_gpuLock ? _gpuLock->mutex : _localMutex);
+    std::unique_lock<std::recursive_mutex> gpuLock(_gpuLock ? _gpuLock->mutex : _localMutex);
     std::unique_lock<std::shared_mutex> lock(_mutex);
     nativeSurface = newNativeSurface;
     surface = std::move(newSurface);
@@ -200,7 +200,7 @@ private:
   }
 
   std::shared_ptr<GPULockInfo> _gpuLock;
-  std::mutex _localMutex; // fallback when _gpuLock is not set
+  std::recursive_mutex _localMutex; // fallback when _gpuLock is not set
   std::mutex _sizeMutex;  // protects width/height (UI thread writes, JS thread reads)
   mutable std::shared_mutex _mutex;
   void *nativeSurface = nullptr;
