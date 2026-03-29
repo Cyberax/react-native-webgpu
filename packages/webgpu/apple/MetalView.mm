@@ -1,6 +1,8 @@
 #import "MetalView.h"
 #import "webgpu/webgpu_cpp.h"
 
+#include "AppleSurfaceBridge.h"
+
 @implementation MetalView {
   BOOL _isConfigured;
 }
@@ -28,22 +30,24 @@
   auto gpu = manager->_gpu;
   auto surface = manager->_platformContext->makeSurface(
       gpu, nativeSurface, size.width, size.height);
-  registry
-      .getSurfaceInfoOrCreate([_contextId intValue], gpu, size.width,
-                              size.height)
-      ->switchToOnscreen(nativeSurface, surface);
+  auto bridge = std::static_pointer_cast<rnwgpu::AppleSurfaceBridge>(
+      registry.getSurfaceInfoOrCreate([_contextId intValue], gpu, size.width,
+                                      size.height));
+  bridge->prepareToDisplay(surface);
 }
 
 - (void)update {
   auto size = self.frame.size;
   auto &registry = rnwgpu::SurfaceRegistry::getInstance();
-  registry.getSurfaceInfo([_contextId intValue])
-      ->resize(size.width, size.height);
+  auto bridge = std::static_pointer_cast<rnwgpu::AppleSurfaceBridge>(
+      registry.getSurfaceInfo([_contextId intValue]));
+  if (bridge) {
+    bridge->resize(size.width, size.height);
+  }
 }
 
 - (void)dealloc {
   auto &registry = rnwgpu::SurfaceRegistry::getInstance();
-  // Remove the surface info from the registry
   registry.removeSurfaceInfo([_contextId intValue]);
 }
 

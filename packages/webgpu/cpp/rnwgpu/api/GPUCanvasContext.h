@@ -29,7 +29,7 @@ public:
       : NativeObject(CLASS_NAME), _gpu(std::move(gpu)) {
     _canvas = std::make_shared<Canvas>(nullptr, width, height);
     auto &registry = rnwgpu::SurfaceRegistry::getInstance();
-    _surfaceInfo =
+    _bridge =
         registry.getSurfaceInfoOrCreate(contextId, _gpu->get(), width, height);
   }
 
@@ -59,7 +59,7 @@ public:
 
 private:
   std::shared_ptr<Canvas> _canvas;
-  std::shared_ptr<SurfaceInfo> _surfaceInfo;
+  std::shared_ptr<SurfaceBridge> _bridge;
   std::shared_ptr<GPU> _gpu;
 };
 

@@ -3,14 +3,6 @@
 #include "RNWebGPUManager.h"
 #include <memory>
 
-#ifdef __APPLE__
-namespace dawn::native::metal {
-
-void WaitForCommandsToBeScheduled(WGPUDevice device);
-
-}
-#endif
-
 namespace rnwgpu {
 
 void GPUCanvasContext::configure(
@@ -34,37 +26,26 @@ void GPUCanvasContext::configure(
   surfaceConfiguration.alphaMode = configuration->alphaMode;
 #endif
   surfaceConfiguration.presentMode = wgpu::PresentMode::Fifo;
-  // Propagate the GPU lock to SurfaceInfo so UI thread surface operations
-  // are serialized with JS thread Dawn calls
-  _surfaceInfo->setGPULock(getGPULock());
-  _surfaceInfo->configure(surfaceConfiguration);
+  _bridge->setGPULock(getGPULock());
+  _bridge->configure(surfaceConfiguration);
 }
 
 void GPUCanvasContext::unconfigure() {}
 
 std::shared_ptr<GPUTexture> GPUCanvasContext::getCurrentTexture() {
-  auto prevSize = _surfaceInfo->getConfig();
   auto width = _canvas->getWidth();
   auto height = _canvas->getHeight();
-  auto sizeHasChanged = prevSize.width != width || prevSize.height != height;
-  if (sizeHasChanged) {
-    _surfaceInfo->reconfigure(width, height);
-  }
-  auto texture = _surfaceInfo->getCurrentTexture();
+  auto texture = _bridge->getCurrentTexture(width, height);
   auto result = std::make_shared<GPUTexture>(texture, "");
   result->setGPULock(getGPULock());
   return result;
 }
 
 void GPUCanvasContext::present() {
-#ifdef __APPLE__
-  dawn::native::metal::WaitForCommandsToBeScheduled(
-      _surfaceInfo->getDevice().Get());
-#endif
-  auto size = _surfaceInfo->getSize();
+  auto size = _bridge->getSize();
   _canvas->setClientWidth(size.width);
   _canvas->setClientHeight(size.height);
-  _surfaceInfo->present();
+  _bridge->present();
 }
 
 } // namespace rnwgpu
