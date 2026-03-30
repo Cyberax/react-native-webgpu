@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <mutex>
+#include "webgpu/webgpu_cpp.h"
 
 namespace rnwgpu {
 
@@ -26,6 +27,12 @@ struct GPULockInfo {
   // that round-trip back through JS, re-entering native methods on the
   // same thread.
   std::recursive_mutex mutex;
+};
+
+// A helper struct to store the Dawn GPU object with a lock
+struct GPUWithLock {
+  wgpu::Instance gpu;
+  std::shared_ptr<GPULockInfo> lock;
 };
 
 } // namespace rnwgpu

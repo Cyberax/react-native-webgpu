@@ -25,6 +25,7 @@ public:
   // Read-only
   Size getSize() override;
   wgpu::Device getDevice() override;
+  NativeInfo getNativeInfo() override;
 
 private:
   void _reconfigure();

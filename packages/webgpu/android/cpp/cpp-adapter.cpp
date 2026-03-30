@@ -50,6 +50,15 @@ extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onSurfaceChanged(
   }
 }
 
+static wgpu::Surface makeSurface(wgpu::Instance instance, void *window, int width,
+                          int height) override {
+  wgpu::SurfaceSourceAndroidNativeWindow androidSurfaceDesc;
+  androidSurfaceDesc.window = reinterpret_cast<ANativeWindow *>(window);
+  wgpu::SurfaceDescriptor surfaceDescriptor;
+  surfaceDescriptor.nextInChain = &androidSurfaceDesc;
+  return instance.CreateSurface(&surfaceDescriptor);
+}
+
 extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onSurfaceCreate(
     JNIEnv *env, jobject thiz, jobject jSurface, jint contextId, jfloat width,
     jfloat height) {

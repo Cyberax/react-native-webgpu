@@ -90,6 +90,13 @@ wgpu::Device AndroidSurfaceBridge::getDevice() {
   return _config.device;
 }
 
+NativeInfo AndroidSurfaceBridge::getNativeInfo() {
+  std::lock_guard<std::mutex> lock(_sizeMutex);
+  return {.nativeSurface = static_cast<void *>(_nativeWindow),
+          .width = _width,
+          .height = _height};
+}
+
 // ─── Private ─────────────────────────────────────────────────────
 
 void AndroidSurfaceBridge::_reconfigure() {

@@ -26,7 +26,6 @@ void GPUCanvasContext::configure(
   surfaceConfiguration.alphaMode = configuration->alphaMode;
 #endif
   surfaceConfiguration.presentMode = wgpu::PresentMode::Fifo;
-  _bridge->setGPULock(getGPULock());
   _bridge->configure(surfaceConfiguration);
 }
 
@@ -36,6 +35,10 @@ std::shared_ptr<GPUTexture> GPUCanvasContext::getCurrentTexture() {
   auto width = _canvas->getWidth();
   auto height = _canvas->getHeight();
   auto texture = _bridge->getCurrentTexture(width, height);
+  if (!texture) {
+    // The bridge has not yet been attached to the UI surface.
+    return nullptr;
+  }
   auto result = std::make_shared<GPUTexture>(texture, "");
   result->setGPULock(getGPULock());
   return result;
