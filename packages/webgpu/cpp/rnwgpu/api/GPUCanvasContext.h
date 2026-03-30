@@ -4,6 +4,8 @@
 #include <string>
 #include <utility>
 
+#include <ReactCommon/CallInvoker.h>
+
 #include "Unions.h"
 
 #include "webgpu/webgpu_cpp.h"
@@ -24,19 +26,15 @@ class GPUCanvasContext : public NativeObject<GPUCanvasContext> {
 public:
   static constexpr const char *CLASS_NAME = "GPUCanvasContext";
 
-  GPUCanvasContext(std::shared_ptr<GPU> gpu, int contextId, int width,
-                   int height)
-      : NativeObject(CLASS_NAME), _gpu(std::move(gpu)) {
-    _canvas = std::make_shared<Canvas>(nullptr, width, height);
-    auto &registry = rnwgpu::SurfaceRegistry::getInstance();
-    _bridge =
-        registry.getSurfaceInfoOrCreate(contextId, _gpu->get(), width, height);
-  }
+  GPUCanvasContext(std::shared_ptr<GPU> gpu, int contextId, float pixelRatio,
+                   std::shared_ptr<jsi::Function> measureCallback,
+                   std::shared_ptr<facebook::react::CallInvoker> callInvoker);
 
 public:
   std::string getBrand() { return CLASS_NAME; }
 
-  std::shared_ptr<Canvas> getCanvas() { return _canvas; }
+  std::shared_ptr<Canvas> getCanvas();
+  void _updateCanvasSize();
 
   static void definePrototype(jsi::Runtime &runtime, jsi::Object &prototype) {
     installGetter(runtime, prototype, "__brand", &GPUCanvasContext::getBrand);
@@ -54,13 +52,19 @@ public:
   inline const wgpu::Surface get() { return nullptr; }
   void configure(std::shared_ptr<GPUCanvasConfiguration> configuration);
   void unconfigure();
-  std::shared_ptr<GPUTexture> getCurrentTexture(int width, int height);
+  std::shared_ptr<GPUTexture> getCurrentTexture();
   void present();
 
 private:
-  std::shared_ptr<Canvas> _canvas;
+  int _contextId;
+  double _pixelRatio = 0;
+  double _width = 0, _height = 0;
+  bool _startedFrame = false;
   std::shared_ptr<SurfaceBridge> _bridge;
   std::shared_ptr<GPU> _gpu;
+  std::shared_ptr<Canvas> _canvas;
+  std::shared_ptr<jsi::Function> _measureCallback;
+  std::shared_ptr<facebook::react::CallInvoker> _callInvoker;
 };
 
 } // namespace rnwgpu

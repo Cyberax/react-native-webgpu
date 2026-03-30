@@ -68,12 +68,24 @@ public:
 
   bool getFabric() { return true; }
 
-  std::shared_ptr<GPUCanvasContext>
-  MakeWebGPUCanvasContext(int contextId, float width, float height) {
-    auto ctx =
-        std::make_shared<GPUCanvasContext>(_gpu, contextId, width, height);
+  jsi::Value MakeWebGPUCanvasContext(jsi::Runtime &runtime, const jsi::Value &thisVal,
+                                     const jsi::Value *args, size_t count) {
+    if (count < 3) {
+      throw jsi::JSError(runtime,
+        "MakeWebGPUCanvasContext(contextId, pixelRatio, measureCallback)");
+    }
+    int contextId = static_cast<int>(args[0].asNumber());
+    float pixelRatio = static_cast<float>(args[1].asNumber());
+    auto measureCallback = std::make_shared<jsi::Function>(
+        args[2].getObject(runtime).getFunction(runtime));
+
+    auto ctx = std::make_shared<GPUCanvasContext>(
+      _gpu, contextId, pixelRatio, std::move(measureCallback), _callInvoker);
     ctx->setGPULock(_gpu->getGPULock());
-    return ctx;
+    auto res = NativeObject<GPUCanvasContext>::create(runtime, ctx);
+    ctx->_updateCanvasSize();
+
+    return res;
   }
 
   jsi::Value createImageBitmap(jsi::Runtime &runtime,

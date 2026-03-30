@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #include "AppleSurfaceBridge.h"
+#include "WGPULogger.h"
 
 namespace dawn::native::metal {
 void WaitForCommandsToBeScheduled(WGPUDevice device);
@@ -7,133 +8,159 @@ void WaitForCommandsToBeScheduled(WGPUDevice device);
 
 namespace rnwgpu {
 
-static void runOnUiThreadSync(std::function<void()> fn) {
-  if ([NSThread isMainThread]) {
-    fn();
-  } else {
-    dispatch_sync(dispatch_get_main_queue(), ^{ fn(); });
-  }
+AppleSurfaceBridge::AppleSurfaceBridge(GPUWithLock gpu, int width, int height)
+    : _gpu(std::move(gpu.gpu)), SurfaceBridge(gpu.lock), _width(width), _height(height) {
+  _config.width = 0;
+  _config.height = 0;
 }
 
-AppleSurfaceBridge::AppleSurfaceBridge(GPUWithLock gpu, int width, int height)
-    : _gpu(std::move(gpu.gpu)), SurfaceBridge(gpu.lock), _width(width), _height(height) {}
-
 void AppleSurfaceBridge::configure(wgpu::SurfaceConfiguration &newConfig) {
-  auto size = getSize(); // Get the size while we're not locked
   std::lock_guard<std::mutex> lock(_mutex);
+  // We might need to copy from the offscreen buffer to the surface
+  // on resize, or if .present() runs before the native layer is ready.
+  newConfig.usage = newConfig.usage | wgpu::TextureUsage::CopyDst;
+  newConfig.width = _config.width;
+  newConfig.height = _config.height;
   _config = newConfig;
-  _config.width = size.width;
-  _config.height = size.height;
-  _config.presentMode = wgpu::PresentMode::Fifo;
-  _config.alphaMode = newConfig.alphaMode;
-  _reconfigureSurface();
+}
+
+NativeInfo AppleSurfaceBridge::getNativeInfo() {
+  std::lock_guard<std::mutex> lock(_mutex);
+  return {.nativeSurface = _nativeSurface, .width = _width, .height = _height};
 }
 
 wgpu::Texture AppleSurfaceBridge::getCurrentTexture(int width, int height) {
   std::lock_guard<std::mutex> lock(_mutex);
-  if (_config.width != width || _config.height != height || !_surfaceConfigured) {
-    _config.width = width;
-    _config.height = height;
-    _reconfigureSurface();
-  }
-
-  if (_surface && _surfaceConfigured) {
-    wgpu::SurfaceTexture surfTex;
-    // It's safe to get the texture without the UI thread roundtrip, only reconfiguration
-    // needs to be delegated to the UI thread.
-    _surface.GetCurrentTexture(&surfTex);
-    return surfTex.texture;
-  } else {
-    // This can happen if the getCurrentTexture() runs before the UI thread
-    // calls prepareToDisplay().
-    wgpu::TextureDescriptor textureDesc;
-    textureDesc.format = _config.format;
-    textureDesc.size.width = _config.width;
-    textureDesc.size.height = _config.height;
-    textureDesc.usage = wgpu::TextureUsage::RenderAttachment |
-                        wgpu::TextureUsage::CopySrc |
-                        wgpu::TextureUsage::TextureBinding;
-    _renderTargetTexture = _config.device.CreateTexture(&textureDesc);
-    return _renderTargetTexture;
-  }
-}
-
-void AppleSurfaceBridge::present() {
-  std::lock_guard<std::mutex> lock(_mutex);
-  if (_config.device) {
-    dawn::native::metal::WaitForCommandsToBeScheduled(_config.device.Get());
-  }
-  if (_surface) {
-    if (_renderTargetTexture) {
-      // The UI thread was late to the party...
-      copyTextureToSurfaceAndPresent(_config.device, _renderTargetTexture, _surface);
-      _renderTargetTexture = nullptr;
-      _presentedTexture = nullptr;
-      return;
-    }
-    // No need for the UI thread roundtrip for the Present call, only reconfiguration
-    // needs to be delegated to the UI thread.
-    _surface.Present();
-  } else if (_renderTargetTexture) {
-    _presentedTexture = _renderTargetTexture;
-    _renderTargetTexture = nullptr;
-  }
-}
-
-void AppleSurfaceBridge::prepareToDisplay(void *nativeSurface, int width, int height,
-                                          wgpu::Surface surface) {
-  std::lock_guard<std::mutex> lock(_mutex);
-  if (_surface) {
-    return;
-  }
-  _nativeSurface = nativeSurface; // For nativeInfo only
-  _surface = std::move(surface);
-
-  if (_presentedTexture || _renderTargetTexture) {
-    // We'll need to use the surface to copy from the texture to it.
-    // Now or later in .present().
-    _config.usage = _config.usage | wgpu::TextureUsage::CopyDst;
-  }
-  _config.width = width;
-  _config.height = height;
-  if (!_config.device) {
-     return;
-  }
-  _surface.Configure(&_config); // We're in the UI thread, it's safe.
-  _surfaceConfigured = true;
-  if (_presentedTexture) {
-    // We already presented something! So copy it to the surface.
-    copyTextureToSurfaceAndPresent(_config.device, _presentedTexture, _surface);
-    _presentedTexture = nullptr;
-  }
-}
-
-void AppleSurfaceBridge::resize(int width, int height) {
-  std::lock_guard<std::mutex> lock(_sizeMutex); // Size mutex, to prevent deadlocks
   _width = width;
   _height = height;
-}
 
-Size AppleSurfaceBridge::getSize() {
-  std::lock_guard<std::mutex> lock(_sizeMutex);
-  return {.width = _width, .height = _height};
-}
-
-NativeInfo AppleSurfaceBridge::getNativeInfo() {
-  std::lock_guard<std::mutex> lock(_sizeMutex);
-  return {.nativeSurface = _nativeSurface, .width = _width, .height = _height};
-}
-
-void AppleSurfaceBridge::_reconfigureSurface() {
-  if (_surface && _config.device != nullptr) {
-    // Thread safety: this will only be called with the GPU device lock
-    // held from the JS thread. The UI thread is engineered to never
-    // block on the GPU lock.
-    runOnUiThreadSync([this]() {
-      _surfaceConfigured = true;
-      _surface.Configure(&_config);
-    });
+  if (!_config.device) {
+    // The user needs to call configure() before calling the getCurrentTexture().
+    return nullptr;
   }
+
+  if (_surface) {
+    // If our surface is sized correctly, just use it!
+    if (_config.width == width && _config.height == height) {
+      // It's safe to update non-size-related properties on the surface. I think.
+      // TODO: use other surface properties to determine if we need to reconfigure in the UI thread
+      _surface.Configure(&_config);
+      wgpu::SurfaceTexture surfTex;
+      // It's safe to get the texture without the UI thread roundtrip, only reconfiguration
+      // needs to be delegated to the UI thread.
+      _surface.GetCurrentTexture(&surfTex);
+      return surfTex.texture;
+    }
+    _resizeSurface(width, height); // Kick off the surface resize in background
+  }
+
+  // This can happen if the getCurrentTexture() runs before the UI thread
+  // calls prepareToDisplay().
+  wgpu::TextureDescriptor textureDesc;
+  textureDesc.format = _config.format;
+  textureDesc.size.width = width;
+  textureDesc.size.height = height;
+  textureDesc.usage = wgpu::TextureUsage::RenderAttachment |
+                      wgpu::TextureUsage::CopySrc |
+                      wgpu::TextureUsage::TextureBinding;
+  _renderTargetTexture = _config.device.CreateTexture(&textureDesc);
+  return _renderTargetTexture;
+}
+
+bool AppleSurfaceBridge::present() {
+  std::lock_guard<std::mutex> lock(_mutex);
+  if (!_config.device) {
+    return false;
+  }
+  dawn::native::metal::WaitForCommandsToBeScheduled(_config.device.Get());
+  // Barrier...
+//  auto queue = _config.device.GetQueue();
+//  auto future = queue.OnSubmittedWorkDone(
+//      wgpu::CallbackMode::WaitAnyOnly,
+//      [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {});
+//  wgpu::FutureWaitInfo waitInfo{future};
+//  _gpu.WaitAny(1, &waitInfo, UINT64_MAX);
+  if (_renderTargetTexture) {
+    _presentedTexture = _renderTargetTexture;
+    _renderTargetTexture = nullptr;
+    if (_surface) {
+      // We were rendering into the texture because the surface was not ready yet
+      // or it needed resizing. Check if the current size is compatible with the direct
+      // copy.
+      int textureWidth = _presentedTexture.GetWidth();
+      int textureHeight = _presentedTexture.GetHeight();
+      if (_config.width == textureWidth && _config.height == textureHeight) {
+        copyTextureToSurfaceAndPresent(_config.device, _presentedTexture, _surface);
+      } else {
+        // Run the texture resizing in the UI thread asynchronously. It will use the
+        // presented texture's dimensions for the size.
+        _resizeSurface(0, 0);
+      }
+    }
+  } else if (_surface) {
+    // Happy path: rendered onto the surface, no need to keep the presented texture anymore
+    _presentedTexture = nullptr;
+    _surface.Present();
+  }
+  return true;
+}
+
+void AppleSurfaceBridge::prepareToDisplay(void *nativeSurface, wgpu::Surface surface) {
+  // Make sure we prevent the JS thread from racing with this method
+  std::lock_guard<std::recursive_mutex> gpuLock(_gpuLock->mutex);
+  std::lock_guard<std::mutex> lock(_mutex);
+
+  if (_surface) {
+    Logger::logToConsole("Surface assigned multiple times, should never happen");
+    return;
+  }
+
+  _nativeSurface = nativeSurface; // For nativeInfo only
+  _surface = std::move(surface);
+  if (_presentedTexture) {
+    _doSurfaceConfiguration(0, 0); // Use the presented texture's dimensions
+  }
+}
+
+void AppleSurfaceBridge::_doSurfaceConfiguration(int width, int height) {
+  if (!_config.device || !_surface) {
+     return;
+  }
+  if (_presentedTexture && (width == 0 || height == 0)) {
+    width = _presentedTexture.GetWidth();
+    height = _presentedTexture.GetHeight();
+  }
+  if (width <= 0 || height <= 0) {
+    // The presented surface has disappeared since the time we were scheduled.
+    // It's perfectly fine! This means that the bridge switched into backing surface mode.
+    return;
+  }
+  if (_config.width == width && _config.height == height) {
+    return;
+  }
+
+  dawn::native::metal::WaitForCommandsToBeScheduled(_config.device.Get());
+
+  _config.width = width;
+  _config.height = height;
+  _surface.Configure(&_config); // We're in the UI thread, it's safe.
+  if (_presentedTexture && _presentedTexture.GetWidth() == width &&
+      _presentedTexture.GetHeight() == height) {
+    // We have a compatible texture. So copy it to the surface.
+    copyTextureToSurfaceAndPresent(_config.device, _presentedTexture, _surface);
+    // Don't delete the backing texture in case we want to redisplay it
+  }
+}
+
+void AppleSurfaceBridge::_resizeSurface(int width, int height) {
+  // Make sure that we live long enough for the dispatch to run
+  auto self = this->shared_from_this();
+
+  dispatch_async(dispatch_get_main_queue(), ^{
+    std::lock_guard<std::recursive_mutex> gpuGuard(self->_gpuLock->mutex);
+    std::lock_guard<std::mutex> lock(self->_mutex);
+    self->_doSurfaceConfiguration(width, height);
+  });
 }
 
 // Factory

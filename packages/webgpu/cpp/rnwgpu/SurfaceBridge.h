@@ -38,7 +38,6 @@ public:
   virtual ~SurfaceBridge() = default;
 
   // Accessors
-  virtual Size getSize() = 0;
   virtual NativeInfo getNativeInfo() = 0;
   std::shared_ptr<GPULockInfo> getGPULock() const { return _gpuLock; }
 
@@ -50,7 +49,7 @@ public:
   // differ from the current configuration.
   // Can return nullptr if the UI object is not yet attached.
   virtual wgpu::Texture getCurrentTexture(int width, int height) = 0;
-  virtual void present() = 0;
+  virtual bool present() = 0;
 
 protected:
 

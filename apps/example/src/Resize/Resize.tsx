@@ -67,10 +67,16 @@ export const Resize = () => {
     });
     let renderTarget: GPUTexture | undefined;
     let renderTargetView: GPUTextureView;
-    return () => {
-      const currentWidth = canvas.clientWidth * PixelRatio.get();
-      const currentHeight = canvas.clientHeight * PixelRatio.get();
+    let currentWidth = 0;
+    let currentHeight = 0;
 
+    return () => {
+      // Force the canvas size to be updated
+      context.configure({
+        device,
+        format: presentationFormat,
+        alphaMode: "premultiplied",
+      });
       // The canvas size is animating via CSS.
       // When the size changes, we need to reallocate the render target.
       // We also need to set the physical size of the canvas to match the computed CSS size.
@@ -78,18 +84,17 @@ export const Resize = () => {
         (currentWidth !== canvas.width ||
           currentHeight !== canvas.height ||
           !renderTargetView) &&
-        currentWidth &&
-        currentHeight
+        canvas.width &&
+        canvas.height
       ) {
         if (renderTarget !== undefined) {
           // Destroy the previous render target
           renderTarget.destroy();
         }
 
-        // Setting the canvas width and height will automatically resize the textures returned
-        // when calling getCurrentTexture() on the context.
-        canvas.width = currentWidth;
-        canvas.height = currentHeight;
+        // The renderer fully controls the canvas size, no need to do anything
+        currentWidth = canvas.width;
+        currentHeight = canvas.height;
 
         // Resize the multisampled render target to match the new canvas size.
         renderTarget = device.createTexture({
