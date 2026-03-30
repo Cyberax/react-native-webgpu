@@ -6,6 +6,7 @@
 
 @implementation MetalView {
   BOOL _isConfigured;
+  BOOL _isAttached;
 }
 
 #if !TARGET_OS_OSX
@@ -61,6 +62,16 @@ static void attemptToPrepareForDisplay(__weak MetalView *weakView, int contextId
 }
 
 - (void)configure {
+  if (_isAttached) {
+    return;
+  }
+
+  // Delay the configuration until we have a valid size
+  auto size = self.frame.size;
+  if (size.width <= 0 || size.height <= 0) {
+    return;
+  }
+
   std::shared_ptr<rnwgpu::RNWebGPUManager> manager = [WebGPUModule getManager];
   auto gpuWithLock = manager->_gpu;
 
@@ -74,23 +85,18 @@ static void attemptToPrepareForDisplay(__weak MetalView *weakView, int contextId
   wgpu::Surface surface = gpuWithLock.gpu.CreateSurface(&surfaceDescriptor);
 
   // Get or create the bridge.
-  auto size = self.frame.size;
   int ctxId = [_contextId intValue];
 
   // Enforce the creation of the bridge
   registry.getSurfaceInfoOrCreate(ctxId, gpuWithLock, size.width, size.height);
   // Try to attach the surface — will retry asynchronously if GPU lock is busy
   attemptToPrepareForDisplay(self, ctxId, gpuWithLock, surface);
+
+  _isAttached = true;
 }
 
 - (void)update {
-  auto size = self.frame.size;
-  auto &registry = rnwgpu::SurfaceRegistry::getInstance();
-  auto bridge = std::static_pointer_cast<rnwgpu::AppleSurfaceBridge>(
-      registry.getSurfaceInfo([_contextId intValue]));
-  if (bridge) {
-    bridge->resize(size.width, size.height);
-  }
+  [self configure];
 }
 
 - (void)dealloc {

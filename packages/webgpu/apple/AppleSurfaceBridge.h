@@ -34,6 +34,7 @@ private:
   wgpu::Instance _gpu;
   wgpu::SurfaceConfiguration _config;
   wgpu::Surface _surface = nullptr;
+  bool _surfaceConfigured = false;
 
   // It's possible that the JS thread accesses the getCurrentTexture
   // before the UI thread attaches the native Metal layer. In this case

@@ -31,13 +31,13 @@ void AppleSurfaceBridge::configure(wgpu::SurfaceConfiguration &newConfig) {
 
 wgpu::Texture AppleSurfaceBridge::getCurrentTexture(int width, int height) {
   std::lock_guard<std::mutex> lock(_mutex);
-  if (_config.width != width || _config.height != height) {
+  if (_config.width != width || _config.height != height || !_surfaceConfigured) {
     _config.width = width;
     _config.height = height;
     _reconfigureSurface();
   }
 
-  if (_surface) {
+  if (_surface && _surfaceConfigured) {
     wgpu::SurfaceTexture surfTex;
     // It's safe to get the texture without the UI thread roundtrip, only reconfiguration
     // needs to be delegated to the UI thread.
@@ -83,11 +83,11 @@ void AppleSurfaceBridge::present() {
 void AppleSurfaceBridge::prepareToDisplay(void *nativeSurface, int width, int height,
                                           wgpu::Surface surface) {
   std::lock_guard<std::mutex> lock(_mutex);
+  if (_surface) {
+    return;
+  }
   _nativeSurface = nativeSurface; // For nativeInfo only
   _surface = std::move(surface);
-  if (!_config.device) {
-     return;
-  }
 
   if (_presentedTexture || _renderTargetTexture) {
     // We'll need to use the surface to copy from the texture to it.
@@ -96,10 +96,14 @@ void AppleSurfaceBridge::prepareToDisplay(void *nativeSurface, int width, int he
   }
   _config.width = width;
   _config.height = height;
+  if (!_config.device) {
+     return;
+  }
   _surface.Configure(&_config); // We're in the UI thread, it's safe.
+  _surfaceConfigured = true;
   if (_presentedTexture) {
     // We already presented something! So copy it to the surface.
-    copyTextureToSurfaceAndPresent(_config.device, _renderTargetTexture, _surface);
+    copyTextureToSurfaceAndPresent(_config.device, _presentedTexture, _surface);
     _presentedTexture = nullptr;
   }
 }
@@ -125,7 +129,10 @@ void AppleSurfaceBridge::_reconfigureSurface() {
     // Thread safety: this will only be called with the GPU device lock
     // held from the JS thread. The UI thread is engineered to never
     // block on the GPU lock.
-    runOnUiThreadSync([this]() { _surface.Configure(&_config); });
+    runOnUiThreadSync([this]() {
+      _surfaceConfigured = true;
+      _surface.Configure(&_config);
+    });
   }
 }
 
