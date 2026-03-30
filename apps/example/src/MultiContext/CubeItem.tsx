@@ -67,8 +67,6 @@ export function CubeItem({
 
     const { pipeline, verticesBuffer, presentationFormat } = sharedResources;
     const canvas = context.canvas as HTMLCanvasElement;
-    canvas.width = canvas.clientWidth; // * PixelRatio.get();
-    canvas.height = canvas.clientHeight; // * PixelRatio.get();
 
     context.configure({
       device,

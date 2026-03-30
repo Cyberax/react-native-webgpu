@@ -31,9 +31,7 @@ void GPUCanvasContext::configure(
 
 void GPUCanvasContext::unconfigure() {}
 
-std::shared_ptr<GPUTexture> GPUCanvasContext::getCurrentTexture() {
-  auto width = _canvas->getWidth();
-  auto height = _canvas->getHeight();
+std::shared_ptr<GPUTexture> GPUCanvasContext::getCurrentTexture(int width, int height) {
   auto texture = _bridge->getCurrentTexture(width, height);
   if (!texture) {
     // The bridge has not yet been attached to the UI surface.
@@ -45,9 +43,6 @@ std::shared_ptr<GPUTexture> GPUCanvasContext::getCurrentTexture() {
 }
 
 void GPUCanvasContext::present() {
-  auto size = _bridge->getSize();
-  _canvas->setClientWidth(size.width);
-  _canvas->setClientHeight(size.height);
   _bridge->present();
 }
 

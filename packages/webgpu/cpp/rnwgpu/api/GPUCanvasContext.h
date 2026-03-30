@@ -54,7 +54,7 @@ public:
   inline const wgpu::Surface get() { return nullptr; }
   void configure(std::shared_ptr<GPUCanvasConfiguration> configuration);
   void unconfigure();
-  std::shared_ptr<GPUTexture> getCurrentTexture();
+  std::shared_ptr<GPUTexture> getCurrentTexture(int width, int height);
   void present();
 
 private:
