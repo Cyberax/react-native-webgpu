@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <memory>
 
 #include "GPULockInfo.h"
@@ -71,15 +72,38 @@ protected:
       return;
     }
 
+    // Copy the overlapping region — handles mismatched sizes gracefully.
+    uint32_t copyWidth = std::min(texture.GetWidth(), surfTex.texture.GetWidth());
+    uint32_t copyHeight = std::min(texture.GetHeight(), surfTex.texture.GetHeight());
+    if (copyWidth == 0 || copyHeight == 0) {
+      surface.Present();
+      return;
+    }
+
     wgpu::CommandEncoderDescriptor encDesc;
     auto encoder = device.CreateCommandEncoder(&encDesc);
+
+    // If the surface is larger than the source, clear it first to avoid
+    // stale content in the margins.
+    if (surfTex.texture.GetWidth() > copyWidth ||
+        surfTex.texture.GetHeight() > copyHeight) {
+      wgpu::RenderPassColorAttachment clearAttachment = {};
+      clearAttachment.view = surfTex.texture.CreateView();
+      clearAttachment.loadOp = wgpu::LoadOp::Clear;
+      clearAttachment.storeOp = wgpu::StoreOp::Store;
+      clearAttachment.clearValue = {0.0, 0.0, 0.0, 0.0};
+      wgpu::RenderPassDescriptor clearDesc = {};
+      clearDesc.colorAttachmentCount = 1;
+      clearDesc.colorAttachments = &clearAttachment;
+      auto pass = encoder.BeginRenderPass(&clearDesc);
+      pass.End();
+    }
 
     wgpu::TexelCopyTextureInfo src = {};
     src.texture = texture;
     wgpu::TexelCopyTextureInfo dst = {};
     dst.texture = surfTex.texture;
-    wgpu::Extent3D size = {texture.GetWidth(), texture.GetHeight(),
-                           texture.GetDepthOrArrayLayers()};
+    wgpu::Extent3D size = {copyWidth, copyHeight, 1};
 
     encoder.CopyTextureToTexture(&src, &dst, &size);
     auto cmds = encoder.Finish();

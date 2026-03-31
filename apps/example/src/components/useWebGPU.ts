@@ -57,7 +57,6 @@ export const useWebGPU = (scene: Scene) => {
         const render = () => {
           const timestamp = Date.now();
           if (!ref.current) return;
-          ref.current.measureView(context.canvas);
           renderScene(timestamp);
           context.present();
           animationFrameId.current = requestAnimationFrame(render);

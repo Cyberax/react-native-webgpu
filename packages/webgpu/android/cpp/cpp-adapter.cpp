@@ -13,6 +13,7 @@
 #include "AndroidSurfaceBridge.h"
 #include "GPUCanvasContext.h"
 #include "RNWebGPUManager.h"
+#include "WGPULogger.h"
 
 #define LOG_TAG "WebGPUModule"
 
@@ -70,6 +71,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onSurfaceCreate(
 extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onSurfaceChanged(
     JNIEnv *env, jobject thiz, jobject jSurface, jint contextId, jfloat width,
     jfloat height) {
+  rnwgpu::Logger::logToConsole("Size change: %f %f\n", width, height);
 //  auto bridge = getAndroidBridge(contextId);
 //  if (bridge) {
 //    auto window = bridge->switchToOffscreen();
