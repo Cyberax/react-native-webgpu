@@ -35,7 +35,7 @@ public class WebGPUTextureView extends TextureView implements TextureView.Surfac
 
   @Override
   public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture surfaceTexture) {
-    mApi.surfaceDestroyed();
+    mApi.surfaceOffscreen();
     return true;
   }
 

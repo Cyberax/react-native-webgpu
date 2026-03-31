@@ -180,8 +180,8 @@ public:
       return std::make_shared<Canvas>(nullptr, 0, 0, 0);
     }
     auto nativeInfo = info->getNativeInfo();
-    return std::make_shared<Canvas>(nativeInfo.nativeSurface, (float)nativeInfo.width,
-                                    (float)nativeInfo.height, 1.f);
+    return std::make_shared<Canvas>(nativeInfo.nativeSurface, nativeInfo.width,
+                                    nativeInfo.height, 1.f);
   }
 
   static void definePrototype(jsi::Runtime &runtime, jsi::Object &prototype) {

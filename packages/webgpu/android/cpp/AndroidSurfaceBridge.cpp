@@ -2,9 +2,11 @@
 
 namespace rnwgpu {
 
-AndroidSurfaceBridge::AndroidSurfaceBridge(wgpu::Instance gpu, int width,
-                                           int height)
-    : _gpu(std::move(gpu)), _width(width), _height(height) {}
+AndroidSurfaceBridge::AndroidSurfaceBridge(GPUWithLock gpu)
+    : _gpu(std::move(gpu.gpu)), SurfaceBridge(gpu.lock), _width(0), _height(0) {
+  _config.width = 0;
+  _config.height = 0;
+}
 
 AndroidSurfaceBridge::~AndroidSurfaceBridge() { _surface = nullptr; }
 
@@ -12,142 +14,92 @@ AndroidSurfaceBridge::~AndroidSurfaceBridge() { _surface = nullptr; }
 
 void AndroidSurfaceBridge::configure(wgpu::SurfaceConfiguration &newConfig) {
   std::lock_guard<std::mutex> lock(_mutex);
-  _config = newConfig;
-  _config.width = _width;
-  _config.height = _height;
-  _config.presentMode = wgpu::PresentMode::Fifo;
-  _config.usage =
-      _config.usage | wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst;
-  _reconfigure();
-}
 
-void AndroidSurfaceBridge::unconfigure() {
-  std::lock_guard<std::mutex> lock(_mutex);
-  if (_surface) {
-    _surface.Unconfigure();
-  }
-  _texture = nullptr;
+  _config = newConfig;
+  _config.presentMode = wgpu::PresentMode::Fifo;
+  _config.usage = _config.usage | wgpu::TextureUsage::CopyDst;
 }
 
 wgpu::Texture AndroidSurfaceBridge::getCurrentTexture(int width, int height) {
-  if (_config.width != width || _config.height != height) {
-    std::lock_guard<std::mutex> lock(_mutex);
-    _config.width = width;
-    _config.height = height;
-    _reconfigure();
-  }
+  std::lock_guard<std::mutex> lock(_mutex);
+  _width = width;
+  _height = height;
+
+  wgpu::TextureDescriptor desc;
+  desc.format = _config.format;
+  desc.size.width = width;
+  desc.size.height = height;
+  desc.usage = wgpu::TextureUsage::RenderAttachment |
+               wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst |
+               wgpu::TextureUsage::TextureBinding;
+  _texture = _config.device.CreateTexture(&desc);
+
   return _texture;
 }
 
-void AndroidSurfaceBridge::present() {
-  if (_surface && _texture) {
+bool AndroidSurfaceBridge::present() {
+  std::lock_guard<std::mutex> lock(_mutex);
+
+  if (_texture) {
+    _presentedTexture = _texture;
+    _texture = nullptr;
+  }
+  if (_surface) {
     _copyToSurfaceAndPresent();
   }
+
+  return true;
 }
 
 // ─── UI thread (Android-specific) ───────────────────────────────
 
 void AndroidSurfaceBridge::switchToOnscreen(ANativeWindow *nativeWindow,
                                             wgpu::Surface surface) {
-  std::lock_guard<std::recursive_mutex> gpuLock(
-      _gpuLock ? _gpuLock->mutex : _localMutex);
+  std::lock_guard<std::recursive_mutex> gpuLock(_gpuLock->mutex);
   std::unique_lock<std::mutex> lock(_mutex);
   _nativeWindow = nativeWindow;
   _surface = std::move(surface);
-  if (_config.device != nullptr) {
-    auto surfConfig = _config;
-    surfConfig.usage = surfConfig.usage | wgpu::TextureUsage::CopyDst;
-    _surface.Configure(&surfConfig);
-    if (_texture != nullptr) {
-      _copyToSurfaceAndPresent();
-    }
-  }
+  _copyToSurfaceAndPresent();
 }
 
 ANativeWindow *AndroidSurfaceBridge::switchToOffscreen() {
-  std::lock_guard<std::recursive_mutex> gpuLock(
-      _gpuLock ? _gpuLock->mutex : _localMutex);
+  std::lock_guard<std::recursive_mutex> gpuLock(_gpuLock->mutex);
   std::unique_lock<std::mutex> lock(_mutex);
+  auto res = _nativeWindow;
   _surface = nullptr;
-  return _nativeWindow;
-}
-
-void AndroidSurfaceBridge::resize(int width, int height) {
-  std::lock_guard<std::mutex> lock(_sizeMutex);
-  _width = width;
-  _height = height;
-}
-
-// ─── Read-only ───────────────────────────────────────────────────
-
-Size AndroidSurfaceBridge::getSize() {
-  std::lock_guard<std::mutex> lock(_sizeMutex);
-  return {.width = _width, .height = _height};
-}
-
-wgpu::Device AndroidSurfaceBridge::getDevice() {
-  std::lock_guard<std::mutex> lock(_mutex);
-  return _config.device;
+  _nativeWindow = nullptr;
+  return res;
 }
 
 NativeInfo AndroidSurfaceBridge::getNativeInfo() {
-  std::lock_guard<std::mutex> lock(_sizeMutex);
+  std::lock_guard<std::mutex> lock(_mutex);
   return {.nativeSurface = static_cast<void *>(_nativeWindow),
           .width = _width,
           .height = _height};
 }
 
-// ─── Private ─────────────────────────────────────────────────────
-
-void AndroidSurfaceBridge::_reconfigure() {
-  _createOffscreenTexture();
-  if (_surface) {
-    auto surfConfig = _config;
-    surfConfig.usage = surfConfig.usage | wgpu::TextureUsage::CopyDst;
-    _surface.Configure(&surfConfig);
-  }
-}
-
-void AndroidSurfaceBridge::_createOffscreenTexture() {
-  wgpu::TextureDescriptor desc;
-  desc.format = _config.format;
-  desc.size.width = _config.width;
-  desc.size.height = _config.height;
-  desc.usage = wgpu::TextureUsage::RenderAttachment |
-               wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst |
-               wgpu::TextureUsage::TextureBinding;
-  _texture = _config.device.CreateTexture(&desc);
-}
-
 void AndroidSurfaceBridge::_copyToSurfaceAndPresent() {
-  wgpu::SurfaceTexture surfTex;
-  _surface.GetCurrentTexture(&surfTex);
-  if (surfTex.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal &&
-      surfTex.status !=
-          wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal) {
+  if (!_config.device || !_presentedTexture) {
     return;
   }
 
-  auto device = _config.device;
-  wgpu::CommandEncoderDescriptor encDesc;
-  auto encoder = device.CreateCommandEncoder(&encDesc);
+  auto queue = _config.device.GetQueue();
+  auto future = queue.OnSubmittedWorkDone(
+      wgpu::CallbackMode::WaitAnyOnly,
+      [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {});
+  wgpu::FutureWaitInfo waitInfo{future};
+  _gpu.WaitAny(1, &waitInfo, UINT64_MAX);
 
-  wgpu::TexelCopyTextureInfo src = {};
-  src.texture = _texture;
-  wgpu::TexelCopyTextureInfo dst = {};
-  dst.texture = surfTex.texture;
-  wgpu::Extent3D size = {_texture.GetWidth(), _texture.GetHeight(), 1};
+  _config.width = _presentedTexture.GetWidth();
+  _config.height = _presentedTexture.GetHeight();
+  _surface.Configure(&_config);
 
-  encoder.CopyTextureToTexture(&src, &dst, &size);
-  auto cmds = encoder.Finish();
-  device.GetQueue().Submit(1, &cmds);
-  _surface.Present();
+  copyTextureToSurfaceAndPresent(_config.device, _presentedTexture, _surface);
 }
 
 // Factory
-std::shared_ptr<SurfaceBridge> createSurfaceBridge(wgpu::Instance gpu,
-                                                    int width, int height) {
-  return std::make_shared<AndroidSurfaceBridge>(std::move(gpu), width, height);
+std::shared_ptr<SurfaceBridge> createSurfaceBridge(GPUWithLock gpu) {
+  return std::make_shared<AndroidSurfaceBridge>(std::move(gpu));
 }
 
 } // namespace rnwgpu

@@ -74,11 +74,6 @@ public class WebGPUView extends ReactViewGroup implements WebGPUAPI {
   }
 
   @Override
-  public void surfaceDestroyed() {
-    onSurfaceDestroy(mContextId);
-  }
-
-  @Override
   public void surfaceOffscreen() {
     switchToOffscreenSurface(mContextId);
   }
@@ -103,9 +98,6 @@ public class WebGPUView extends ReactViewGroup implements WebGPUAPI {
     float width,
     float height
   );
-
-  @DoNotStrip
-  private native void onSurfaceDestroy(int contextId);
 
   @DoNotStrip
   private native void switchToOffscreenSurface(int contextId);

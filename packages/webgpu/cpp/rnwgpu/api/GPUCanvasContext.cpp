@@ -40,7 +40,8 @@ void GPUCanvasContext::configure(std::shared_ptr<GPUCanvasConfiguration> configu
 void GPUCanvasContext::unconfigure() {}
 
 std::shared_ptr<GPUTexture> GPUCanvasContext::getCurrentTexture() {
-  auto texture = _bridge->getCurrentTexture(_canvas->getWidth(), _canvas->getHeight());
+  auto texture = _bridge->getCurrentTexture(
+    ceil(_canvas->getWidth()), ceil(_canvas->getHeight()));
   if (!texture) {
     return nullptr;
   }

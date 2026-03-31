@@ -22,18 +22,18 @@ public:
       : NativeObject(CLASS_NAME), _surface(surface), _width(width * pixelRatio),
         _height(height * pixelRatio), _clientWidth(width), _clientHeight(height) {}
 
-  int getWidth() { return _width; }
-  int getHeight() { return _height; }
+  float getWidth() { return _width; }
+  float getHeight() { return _height; }
 
   void setWidth(const int width) { _width = width; }
   void setHeight(const int height) { _height = height; }
 
-  int getClientWidth() { return _clientWidth; }
-  int getClientHeight() { return _clientHeight; }
+  float getClientWidth() { return _clientWidth; }
+  float getClientHeight() { return _clientHeight; }
 
-  void setClientWidth(const int width) { _clientWidth = width; }
+  void setClientWidth(const float width) { _clientWidth = width; }
 
-  void setClientHeight(const int height) { _clientHeight = height; }
+  void setClientHeight(const float height) { _clientHeight = height; }
 
   void *getSurface() { return _surface; }
 
@@ -51,10 +51,10 @@ public:
 
 private:
   void *_surface;
-  int _width;
-  int _height;
-  int _clientWidth;
-  int _clientHeight;
+  float _width;
+  float _height;
+  float _clientWidth;
+  float _clientHeight;
 };
 
 } // namespace rnwgpu

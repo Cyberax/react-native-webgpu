@@ -55,14 +55,23 @@ interface CanvasProps extends ViewProps {
 }
 
 function getViewSize(view: View): { width: number; height: number } {
-  // getBoundingClientRect became stable in RN 0.83
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const viewAny = view as any;
-  const size =
-    "getBoundingClientRect" in viewAny
-      ? viewAny.getBoundingClientRect()
-      : viewAny.unstable_getBoundingClientRect();
-  return size;
+  let widthRes = 0, heightRes = 0;
+  view.measure((x, y, width, height, pageX, pageY) => {
+    widthRes = width;
+    heightRes = height;
+  });
+
+  console.log(`Size: ${widthRes}x${heightRes}`);
+  return { width: widthRes, height: heightRes };
+  //
+  // // getBoundingClientRect became stable in RN 0.83
+  // // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // const viewAny = view as any;
+  // const size =
+  //   "getBoundingClientRect" in viewAny
+  //     ? viewAny.getBoundingClientRect()
+  //     : viewAny.unstable_getBoundingClientRect();
+  // return size;
 }
 
 export const Canvas = ({ transparent, ref, ...props }: CanvasProps) => {

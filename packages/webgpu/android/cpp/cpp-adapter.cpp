@@ -41,17 +41,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUModule_initializeNative(
                                                       platformContext);
 }
 
-extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onSurfaceChanged(
-    JNIEnv *env, jobject thiz, jobject surface, jint contextId, jfloat width,
-    jfloat height) {
-  auto bridge = getAndroidBridge(contextId);
-  if (bridge) {
-    bridge->resize(static_cast<int>(width), static_cast<int>(height));
-  }
-}
-
-static wgpu::Surface makeSurface(wgpu::Instance instance, void *window, int width,
-                          int height) override {
+static wgpu::Surface makeSurface(wgpu::Instance instance, void *window) {
   wgpu::SurfaceSourceAndroidNativeWindow androidSurfaceDesc;
   androidSurfaceDesc.window = reinterpret_cast<ANativeWindow *>(window);
   wgpu::SurfaceDescriptor surfaceDescriptor;
@@ -62,18 +52,34 @@ static wgpu::Surface makeSurface(wgpu::Instance instance, void *window, int widt
 extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onSurfaceCreate(
     JNIEnv *env, jobject thiz, jobject jSurface, jint contextId, jfloat width,
     jfloat height) {
+  auto &registry = rnwgpu::SurfaceRegistry::getInstance();
+
+  auto bridge = std::static_pointer_cast<rnwgpu::AndroidSurfaceBridge>(
+    registry.getSurfaceInfoOrCreate(contextId, manager->_gpu));
+  if (bridge) {
+    auto old = bridge->switchToOffscreen();
+    if (old) ANativeWindow_release(old);
+  }
 
   // It runs ANativeWindow_acquire() internally
   auto window = ANativeWindow_fromSurface(env, jSurface);
-
-  auto &registry = rnwgpu::SurfaceRegistry::getInstance();
-  auto gpu = manager->_gpu;
-  auto surface = manager->_platformContext->makeSurface(
-      gpu, window, static_cast<int>(width), static_cast<int>(height));
-  auto bridge = std::static_pointer_cast<rnwgpu::AndroidSurfaceBridge>(
-      registry.getSurfaceInfoOrCreate(contextId, gpu, static_cast<int>(width),
-                                      static_cast<int>(height)));
+  auto surface = makeSurface(manager->_gpu.gpu, window);
   bridge->switchToOnscreen(window, surface);
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onSurfaceChanged(
+    JNIEnv *env, jobject thiz, jobject jSurface, jint contextId, jfloat width,
+    jfloat height) {
+  auto bridge = getAndroidBridge(contextId);
+  if (bridge) {
+    auto window = bridge->switchToOffscreen();
+    if (window) ANativeWindow_release(window);
+
+    // It runs ANativeWindow_acquire() internally
+    auto newWindow = ANativeWindow_fromSurface(env, jSurface);
+    auto surface = makeSurface(manager->_gpu.gpu, newWindow);
+    bridge->switchToOnscreen(newWindow, surface);
+  }
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_switchToOffscreenSurface(
