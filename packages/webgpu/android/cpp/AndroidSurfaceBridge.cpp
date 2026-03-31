@@ -66,6 +66,9 @@ ANativeWindow *AndroidSurfaceBridge::switchToOffscreen() {
   std::lock_guard<std::recursive_mutex> gpuLock(_gpuLock->mutex);
   std::unique_lock<std::mutex> lock(_mutex);
   auto res = _nativeWindow;
+  if (_surface) {
+      _surface.Unconfigure();
+  }
   _surface = nullptr;
   _nativeWindow = nullptr;
   return res;

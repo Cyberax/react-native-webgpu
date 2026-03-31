@@ -42,5 +42,6 @@ public class WebGPUTextureView extends TextureView implements TextureView.Surfac
   @Override
   public void onSurfaceTextureUpdated(@NonNull SurfaceTexture surfaceTexture) {
     // No implementation needed
+
   }
 }

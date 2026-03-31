@@ -70,16 +70,16 @@ extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onSurfaceCreate(
 extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_onSurfaceChanged(
     JNIEnv *env, jobject thiz, jobject jSurface, jint contextId, jfloat width,
     jfloat height) {
-  auto bridge = getAndroidBridge(contextId);
-  if (bridge) {
-    auto window = bridge->switchToOffscreen();
-    if (window) ANativeWindow_release(window);
-
-    // It runs ANativeWindow_acquire() internally
-    auto newWindow = ANativeWindow_fromSurface(env, jSurface);
-    auto surface = makeSurface(manager->_gpu.gpu, newWindow);
-    bridge->switchToOnscreen(newWindow, surface);
-  }
+//  auto bridge = getAndroidBridge(contextId);
+//  if (bridge) {
+//    auto window = bridge->switchToOffscreen();
+//    if (window) ANativeWindow_release(window);
+//
+//    // It runs ANativeWindow_acquire() internally
+//    auto newWindow = ANativeWindow_fromSurface(env, jSurface);
+//    auto surface = makeSurface(manager->_gpu.gpu, newWindow);
+//    bridge->switchToOnscreen(newWindow, surface);
+//  }
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_webgpu_WebGPUView_switchToOffscreenSurface(

@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "GPULockInfo.h"
+#include "WGPULogger.h"
 #include "webgpu/webgpu_cpp.h"
 
 namespace rnwgpu {
@@ -64,7 +65,9 @@ protected:
     surface.GetCurrentTexture(&surfTex);
     if (surfTex.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal &&
         surfTex.status != wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal) {
-      // TODO: error handling?...
+      Logger::logToConsole("SurfaceBridge",
+          "GetCurrentTexture failed: status=%d, src texture=%dx%d",
+          (int)surfTex.status, texture.GetWidth(), texture.GetHeight());
       return;
     }
 
@@ -75,7 +78,8 @@ protected:
     src.texture = texture;
     wgpu::TexelCopyTextureInfo dst = {};
     dst.texture = surfTex.texture;
-    wgpu::Extent3D size = {texture.GetWidth(), texture.GetHeight(), 1};
+    wgpu::Extent3D size = {texture.GetWidth(), texture.GetHeight(),
+                           texture.GetDepthOrArrayLayers()};
 
     encoder.CopyTextureToTexture(&src, &dst, &size);
     auto cmds = encoder.Finish();

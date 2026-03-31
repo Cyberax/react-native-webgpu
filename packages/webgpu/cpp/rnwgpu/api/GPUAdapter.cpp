@@ -76,7 +76,7 @@ async::AsyncTaskHandle GPUAdapter::requestDevice(
         message.length > 0 ? std::string(message.data, message.length) : "";
     std::string fullMessage =
         msg.length() > 0 ? std::string(errorType) + ": " + msg : "no message";
-    fprintf(stderr, "%s\n", fullMessage.c_str());
+    Logger::logToConsole("%s\n", fullMessage.c_str());
 
     // Look up the GPUDevice from the registry and notify it
     if (auto gpuDevice = GPUDevice::lookupDevice(device.Get())) {
@@ -102,7 +102,7 @@ async::AsyncTaskHandle GPUAdapter::requestDevice(
                                 wgpu::Device device,
                                 wgpu::StringView message) mutable {
               if (message.length) {
-                fprintf(stderr, "%s", message.data);
+                  Logger::logToConsole("%s", message.data);
               }
 
               if (status != wgpu::RequestDeviceStatus::Success || !device) {
