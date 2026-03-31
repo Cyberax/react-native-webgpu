@@ -9,7 +9,7 @@ namespace rnwgpu {
 
 class AppleSurfaceBridge : public SurfaceBridge, public std::enable_shared_from_this<AppleSurfaceBridge> {
 public:
-  AppleSurfaceBridge(GPUWithLock gpu, int width, int height);
+  AppleSurfaceBridge(GPUWithLock gpu);
   ~AppleSurfaceBridge() override {};
 
   // JS thread

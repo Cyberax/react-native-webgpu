@@ -89,7 +89,6 @@ protected:
 // Platform-specific factory. Implemented in:
 //   android/cpp/AndroidSurfaceBridge.cpp
 //   apple/AppleSurfaceBridge.mm
-std::shared_ptr<SurfaceBridge> createSurfaceBridge(GPUWithLock gpu,
-  int width, int height);
+std::shared_ptr<SurfaceBridge> createSurfaceBridge(GPUWithLock gpu);
 
 } // namespace rnwgpu

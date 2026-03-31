@@ -68,24 +68,12 @@ public:
 
   bool getFabric() { return true; }
 
-  jsi::Value MakeWebGPUCanvasContext(jsi::Runtime &runtime, const jsi::Value &thisVal,
-                                     const jsi::Value *args, size_t count) {
-    if (count < 3) {
-      throw jsi::JSError(runtime,
-        "MakeWebGPUCanvasContext(contextId, pixelRatio, measureCallback)");
-    }
-    int contextId = static_cast<int>(args[0].asNumber());
-    float pixelRatio = static_cast<float>(args[1].asNumber());
-    auto measureCallback = std::make_shared<jsi::Function>(
-        args[2].getObject(runtime).getFunction(runtime));
-
-    auto ctx = std::make_shared<GPUCanvasContext>(
-      _gpu, contextId, pixelRatio, std::move(measureCallback), _callInvoker);
+  std::shared_ptr<GPUCanvasContext>
+    MakeWebGPUCanvasContext(int contextId, float width, float height, float pixelRatio) {
+    auto ctx =
+        std::make_shared<GPUCanvasContext>(_gpu, contextId, width, height, pixelRatio);
     ctx->setGPULock(_gpu->getGPULock());
-    auto res = NativeObject<GPUCanvasContext>::create(runtime, ctx);
-    ctx->_updateCanvasSize();
-
-    return res;
+    return ctx;
   }
 
   jsi::Value createImageBitmap(jsi::Runtime &runtime,
@@ -189,11 +177,11 @@ public:
     auto &registry = rnwgpu::SurfaceRegistry::getInstance();
     auto info = registry.getSurfaceInfo(contextId);
     if (info == nullptr) {
-      return std::make_shared<Canvas>(nullptr, 0, 0);
+      return std::make_shared<Canvas>(nullptr, 0, 0, 0);
     }
     auto nativeInfo = info->getNativeInfo();
-    return std::make_shared<Canvas>(nativeInfo.nativeSurface, nativeInfo.width,
-                                    nativeInfo.height);
+    return std::make_shared<Canvas>(nativeInfo.nativeSurface, (float)nativeInfo.width,
+                                    (float)nativeInfo.height, 1.f);
   }
 
   static void definePrototype(jsi::Runtime &runtime, jsi::Object &prototype) {

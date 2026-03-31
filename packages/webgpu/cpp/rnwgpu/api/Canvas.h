@@ -17,9 +17,10 @@ class Canvas : public NativeObject<Canvas> {
 public:
   static constexpr const char *CLASS_NAME = "Canvas";
 
-  explicit Canvas(void *surface, const int width, const int height)
-      : NativeObject(CLASS_NAME), _surface(surface), _width(width),
-        _height(height), _clientWidth(width), _clientHeight(height) {}
+  explicit Canvas(void *surface, const float width, const float height,
+    const float pixelRatio)
+      : NativeObject(CLASS_NAME), _surface(surface), _width(width * pixelRatio),
+        _height(height * pixelRatio), _clientWidth(width), _clientHeight(height) {}
 
   int getWidth() { return _width; }
   int getHeight() { return _height; }
@@ -42,8 +43,10 @@ public:
                         &Canvas::setWidth);
     installGetterSetter(runtime, prototype, "height", &Canvas::getHeight,
                         &Canvas::setHeight);
-    installGetter(runtime, prototype, "clientWidth", &Canvas::getClientWidth);
-    installGetter(runtime, prototype, "clientHeight", &Canvas::getClientHeight);
+    installGetterSetter(runtime, prototype, "clientWidth", &Canvas::getClientWidth,
+                        &Canvas::setClientWidth);
+    installGetterSetter(runtime, prototype, "clientHeight", &Canvas::getClientHeight,
+                        &Canvas::setClientHeight);
   }
 
 private:

@@ -16,8 +16,9 @@ declare global {
     getNativeSurface: (contextId: number) => NativeCanvas;
     MakeWebGPUCanvasContext: (
       contextId: number,
+      width: number,
+      height: number,
       pixelRatio: number,
-      measurer: () => { width: number; height: number },
     ) => RNCanvasContext;
     DecodeToUTF8: (buffer: NodeJS.ArrayBufferView | ArrayBuffer) => string;
     createImageBitmap: typeof createImageBitmap;
@@ -26,13 +27,16 @@ declare global {
 
 type SurfacePointer = bigint;
 
-export interface NativeCanvas {
-  surface: SurfacePointer;
+export interface CanvasSize {
   width: number;
   height: number;
   clientWidth: number;
   clientHeight: number;
 }
+
+export type NativeCanvas = CanvasSize & {
+  surface: SurfacePointer;
+};
 
 export type RNCanvasContext = GPUCanvasContext & {
   present: () => void;
@@ -40,6 +44,7 @@ export type RNCanvasContext = GPUCanvasContext & {
 
 export interface CanvasRef {
   getContextId: () => number;
+  measureView: (canvasTarget: unknown) => CanvasSize;
   getContext(contextName: "webgpu"): RNCanvasContext | null;
   getNativeSurface: () => NativeCanvas;
 }
@@ -60,23 +65,36 @@ function getViewSize(view: View): { width: number; height: number } {
   return size;
 }
 
-export type CanvasElement = {
-  width: number;
-  height: number;
-  clientWidth: number;
-  clientHeight: number;
-  surface: bigint;
-};
-
 export const Canvas = ({ transparent, ref, ...props }: CanvasProps) => {
   const viewRef = useRef<View>(null);
-  const contextRef = useRef<RNCanvasContext | null>(null);
   const [contextId, _] = useState(() => generateContextId());
   useImperativeHandle(ref, () => {
     return {
       getContextId: () => contextId,
       getNativeSurface: () => {
         return RNWebGPU.getNativeSurface(contextId);
+      },
+      measureView: (canvasTarget: unknown): CanvasSize => {
+        if (!viewRef.current) {
+          throw new Error("[WebGPU] Cannot get context before mount");
+        }
+
+        const sz = getViewSize(viewRef.current);
+        const pixelRatio = PixelRatio.get();
+        const res = {
+          width: sz.width * pixelRatio,
+          height: sz.height * pixelRatio,
+          clientWidth: sz.width,
+          clientHeight: sz.height,
+        };
+        if (canvasTarget) {
+          const canvas = canvasTarget as NativeCanvas;
+          canvas.width = res.width;
+          canvas.height = res.height;
+          canvas.clientWidth = res.clientWidth;
+          canvas.clientHeight = res.clientHeight;
+        }
+        return res;
       },
       getContext(contextName: "webgpu"): RNCanvasContext | null {
         if (contextName !== "webgpu") {
@@ -85,31 +103,18 @@ export const Canvas = ({ transparent, ref, ...props }: CanvasProps) => {
         if (!viewRef.current) {
           throw new Error("[WebGPU] Cannot get context before mount");
         }
-        if (contextRef.current) {
-          return contextRef.current;
-        }
 
-        const view = viewRef.current;
         const pixelRatio = PixelRatio.get();
-        const weakView = new WeakRef(view);
+        const sz = getViewSize(viewRef.current);
 
-        const measurer = function () {
-          // We need to use a weak ref to break the loop between the GPU context and the view
-          const cur = weakView.deref();
-          if (!cur) {
-            return { width: 0, height: 0 };
-          }
-          return getViewSize(cur);
-        };
-
-        contextRef.current = RNWebGPU.MakeWebGPUCanvasContext(
+        return RNWebGPU.MakeWebGPUCanvasContext(
           contextId,
+          sz.width,
+          sz.height,
           pixelRatio,
-          measurer,
         );
-        return contextRef.current;
       },
-    };
+    } satisfies CanvasRef;
   });
 
   const withNativeId = { ...props, nativeID: `webgpu-container-${contextId}` };

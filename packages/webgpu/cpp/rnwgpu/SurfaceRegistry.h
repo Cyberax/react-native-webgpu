@@ -33,13 +33,14 @@ public:
   }
 
   std::shared_ptr<SurfaceBridge>
-  getSurfaceInfoOrCreate(int id, GPUWithLock gpu, int width, int height) {
+  getSurfaceInfoOrCreate(int id, GPUWithLock gpu) {
+
     std::unique_lock<std::shared_mutex> lock(_mutex);
     auto it = _registry.find(id);
     if (it != _registry.end()) {
       return it->second;
     }
-    auto bridge = createSurfaceBridge(gpu, width, height);
+    auto bridge = createSurfaceBridge(gpu);
     _registry[id] = bridge;
     return bridge;
   }

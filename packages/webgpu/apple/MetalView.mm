@@ -3,7 +3,6 @@
 
 #include "AppleSurfaceBridge.h"
 #include "SurfaceRegistry.h"
-#include <syslog.h>
 
 @implementation MetalView {
   BOOL _isConfigured;
@@ -27,9 +26,6 @@
 
 - (void)configure {
   // Delay the configuration until we have a valid size
-  auto size = self.frame.size;
-  CGFloat scale = [UIScreen mainScreen].scale;
-
   std::shared_ptr<rnwgpu::RNWebGPUManager> manager = [WebGPUModule getManager];
   auto gpuWithLock = manager->_gpu;
 
@@ -44,13 +40,12 @@
 
   // Get or create the bridge.
   int ctxId = [_contextId intValue];
-  syslog(LOG_ERR, "Contexty.... %d\n", ctxId);
 
   // Create the bridge and attach the surface.
   // Safe to take the GPU lock here: prepareToDisplay runs on the UI thread
   // and never dispatch_sync's back to it, so no deadlock.
   auto bridge = std::static_pointer_cast<rnwgpu::AppleSurfaceBridge>(
-      registry.getSurfaceInfoOrCreate(ctxId, gpuWithLock, size.width * scale, size.height * scale));
+      registry.getSurfaceInfoOrCreate(ctxId, gpuWithLock));
 
   void *nativeSurface = (__bridge void *)self.layer;
   bridge->prepareToDisplay(nativeSurface, surface);

@@ -26,15 +26,15 @@ class GPUCanvasContext : public NativeObject<GPUCanvasContext> {
 public:
   static constexpr const char *CLASS_NAME = "GPUCanvasContext";
 
-  GPUCanvasContext(std::shared_ptr<GPU> gpu, int contextId, float pixelRatio,
-                   std::shared_ptr<jsi::Function> measureCallback,
-                   std::shared_ptr<facebook::react::CallInvoker> callInvoker);
+  GPUCanvasContext(std::shared_ptr<GPU> gpu, int contextId,
+    float width, float height, float pixelRatio);
 
 public:
   std::string getBrand() { return CLASS_NAME; }
 
-  std::shared_ptr<Canvas> getCanvas();
-  void _updateCanvasSize();
+  std::shared_ptr<Canvas> getCanvas() {
+    return _canvas;
+  }
 
   static void definePrototype(jsi::Runtime &runtime, jsi::Object &prototype) {
     installGetter(runtime, prototype, "__brand", &GPUCanvasContext::getBrand);
@@ -57,8 +57,6 @@ public:
 
 private:
   int _contextId;
-  double _pixelRatio = 0;
-  double _width = 0, _height = 0;
   bool _startedFrame = false;
   std::shared_ptr<SurfaceBridge> _bridge;
   std::shared_ptr<GPU> _gpu;

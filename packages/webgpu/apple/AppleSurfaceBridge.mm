@@ -8,8 +8,8 @@ void WaitForCommandsToBeScheduled(WGPUDevice device);
 
 namespace rnwgpu {
 
-AppleSurfaceBridge::AppleSurfaceBridge(GPUWithLock gpu, int width, int height)
-    : _gpu(std::move(gpu.gpu)), SurfaceBridge(gpu.lock), _width(width), _height(height) {
+AppleSurfaceBridge::AppleSurfaceBridge(GPUWithLock gpu)
+    : _gpu(std::move(gpu.gpu)), SurfaceBridge(gpu.lock) {
   _config.width = 0;
   _config.height = 0;
 }
@@ -164,8 +164,8 @@ void AppleSurfaceBridge::_resizeSurface(int width, int height) {
 }
 
 // Factory
-std::shared_ptr<SurfaceBridge> createSurfaceBridge(GPUWithLock gpu, int width, int height) {
-  return std::make_shared<AppleSurfaceBridge>(std::move(gpu), width, height);
+std::shared_ptr<SurfaceBridge> createSurfaceBridge(GPUWithLock gpu) {
+  return std::make_shared<AppleSurfaceBridge>(std::move(gpu));
 }
 
 } // namespace rnwgpu

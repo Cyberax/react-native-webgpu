@@ -5,22 +5,16 @@
 
 namespace rnwgpu {
 
-GPUCanvasContext::GPUCanvasContext(std::shared_ptr<GPU> gpu, int contextId, float pixelRatio,
-  std::shared_ptr<jsi::Function> measureCallback,
-  std::shared_ptr<facebook::react::CallInvoker> callInvoker)
-    : NativeObject(CLASS_NAME), _gpu(std::move(gpu)), _contextId(contextId),
-      _pixelRatio(pixelRatio), _measureCallback(std::move(measureCallback)),
-      _callInvoker(std::move(callInvoker)) {
+GPUCanvasContext::GPUCanvasContext(std::shared_ptr<GPU> gpu, int contextId,
+  float width, float height, float pixelRatio)
+    : NativeObject(CLASS_NAME), _gpu(std::move(gpu)), _contextId(contextId) {
 
-  _canvas = std::make_shared<Canvas>(nullptr, 0, 0);
+  _canvas = std::make_shared<Canvas>(nullptr, width, height, pixelRatio);
   auto &registry = SurfaceRegistry::getInstance();
-  _bridge = registry.getSurfaceInfoOrCreate(contextId, _gpu->get(), 0, 0);
+  _bridge = registry.getSurfaceInfoOrCreate(contextId, _gpu->get());
 }
 
-void GPUCanvasContext::configure(
-    std::shared_ptr<GPUCanvasConfiguration> configuration) {
-  _updateCanvasSize();
-
+void GPUCanvasContext::configure(std::shared_ptr<GPUCanvasConfiguration> configuration) {
   Convertor conv;
   wgpu::SurfaceConfiguration surfaceConfiguration;
   surfaceConfiguration.device = configuration->device->get();
@@ -45,50 +39,8 @@ void GPUCanvasContext::configure(
 
 void GPUCanvasContext::unconfigure() {}
 
-void GPUCanvasContext::_updateCanvasSize() {
-  auto *rt = getCreationRuntime();
-  auto *mainRt = BaseRuntimeAwareCache::getMainJsRuntime();
-
-  auto measure = [this, mainRt]() {
-    if (!mainRt || !_measureCallback) return;
-    auto result = _measureCallback->call(*mainRt);
-    if (result.isObject()) {
-      auto obj = result.getObject(*mainRt);
-      auto w = static_cast<double>(
-          obj.getProperty(*mainRt, "width").asNumber());
-      auto h = static_cast<double>(
-          obj.getProperty(*mainRt, "height").asNumber());
-      if (w > 0 && h > 0) {
-        _width = w;
-        _height = h;
-        // Canvas size is used by the clients only
-        _canvas->setWidth(_width * _pixelRatio);
-        _canvas->setHeight(_height * _pixelRatio);
-        _canvas->setClientWidth(_width * _pixelRatio);
-        _canvas->setClientHeight(_height * _pixelRatio);
-      }
-    }
-  };
-
-  if (rt == mainRt) {
-    // Already on the main JS thread — call directly
-    measure();
-  } else if (_callInvoker) {
-    // On a worklet/UI thread — marshal to the JS thread synchronously
-    _callInvoker->invokeSync(std::move(measure));
-  }
-  // else: no invoker, use last known size (set by previous JS-thread call)
-}
-
-std::shared_ptr<Canvas> GPUCanvasContext::getCanvas() {
-  _updateCanvasSize();
-  return _canvas;
-}
-
 std::shared_ptr<GPUTexture> GPUCanvasContext::getCurrentTexture() {
-  _updateCanvasSize();
-  auto texture = _bridge->getCurrentTexture(
-    ceil(_width * _pixelRatio), ceil(_height * _pixelRatio));
+  auto texture = _bridge->getCurrentTexture(_canvas->getWidth(), _canvas->getHeight());
   if (!texture) {
     return nullptr;
   }
