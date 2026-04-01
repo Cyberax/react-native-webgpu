@@ -25,10 +25,12 @@ public:
 
 private:
   void _copyToSurfaceAndPresent();
+  void _barrier();
 
   wgpu::Instance _gpu;
   wgpu::SurfaceConfiguration _config;
   wgpu::Surface _surface = nullptr;
+  bool _surfaceConfigured = false;
   wgpu::Texture _texture = nullptr;
   wgpu::Texture _presentedTexture = nullptr;
   ANativeWindow *_nativeWindow = nullptr;
