@@ -71,12 +71,12 @@ void AndroidSurfaceBridge::switchToOnscreen(ANativeWindow *nativeWindow,
 ANativeWindow *AndroidSurfaceBridge::switchToOffscreen() {
   std::lock_guard<std::recursive_mutex> gpuLock(_gpuLock->mutex);
   std::unique_lock<std::mutex> lock(_mutex);
-  auto res = _nativeWindow;
-  if (_surface) {
+  if (_surface && _surfaceConfigured) {
       _surface.Unconfigure();
   }
   _surfaceConfigured = false;
   _surface = nullptr;
+  const auto res = _nativeWindow;
   _nativeWindow = nullptr;
   return res;
 }

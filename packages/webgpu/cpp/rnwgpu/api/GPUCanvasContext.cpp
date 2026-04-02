@@ -44,7 +44,9 @@ std::shared_ptr<GPUTexture> GPUCanvasContext::getCurrentTexture() {
   if (!texture) {
     return nullptr;
   }
-  auto result = std::make_shared<GPUTexture>(texture, "");
+  // The returned texture doesn't own the RAM for the rendering buffer,
+  // so we don't need to debit it.
+  auto result = std::make_shared<GPUTexture>(texture, "", 0);
   result->setGPULock(getGPULock());
   _startedFrame = true;
   return result;
